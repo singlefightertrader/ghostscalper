@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<title>GHOST ENGINE V14 — ULTIMATE AUTHORITY</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+* { box-sizing: border-box; }
+html,body{ margin:0; height:100%; background:#020617; color:#e5e7eb; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
+.app-container { display: flex; flex-direction: column; height: 100vh; width: 100%; }
+#panel { background: #0f172a; padding: 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-bottom: 1px solid #1e293b; z-index: 10; }
+#panel select, #panel button { flex: 1; min-width: 80px; background: #1e293b; color: #e5e7eb; border: 1px solid #334155; border-radius: 6px; padding: 8px; font-size: 11px; cursor: pointer; font-weight: bold; }
+#panel button { background: #16a34a; border: none; text-transform: uppercase; }
+#status-badge { width: 100%; text-align: center; margin-top: 4px; padding: 10px; border-radius: 4px; font-size: 12px; letter-spacing: 0.5px; font-weight: bold; transition: all 0.3s; min-height: 40px; display: flex; align-items: center; justify-content: center; }
+#chart-wrapper { flex: 1; position: relative; width: 100%; background: #020617; }
+#chart { width: 100%; height: 100%; }
+#info-panel { background: #0f172a; border-top: 1px solid #1e293b; padding: 12px; z-index: 10; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.row { display: flex; flex-direction: column; border-bottom: 1px solid #1e293b66; padding-bottom: 4px; }
+.row b { color: #94a3b8; font-size: 9px; text-transform: uppercase; width: 100%; }
+.row span { color: #38bdf8; font-family: monospace; font-size: 13px; font-weight: bold; }
+.valid { background: #16a34a; color: #fff; box-shadow: 0 0 20px #16a34a; }
+.notrade { background: #ef4444; color: #fff; }
+.wait { background: #334155; color: #9ca3af; }
+.reached { background: #f59e0b; color: #fff; box-shadow: 0 0 20px #f59e0b; animation: blink 0.5s infinite alternate; }
+@keyframes blink { from { opacity: 1; } to { opacity: 0.7; } }
+
+#scalper-hint {
+    position: absolute; bottom: 15px; left: 15px; right: 15px;
+    background: rgba(15, 23, 42, 0.95); color: #f1f5f9;
+    font-size: 12px; line-height: 1.5; padding: 12px;
+    border-radius: 8px; border: 1px solid #38bdf8;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    white-space: pre-line; z-index: 50; display: none;
+    transition: opacity 1s ease;
+}
+</style>
+</head>
+<body>
+
+<div class="app-container">
+  <div id="panel">
+    <select id="symbol"><option value="BTCUSDT">BTC/USDT</option><option value="ETHUSDT">ETH/USDT</option><option value="SOLUSDT">SOL/USDT</option></select>
+    <select id="tf">
+      <option value="1m">M1</option><option value="3m">M3</option><option value="5m">M5</option>
+      <option value="15m">M15</option><option value="30m">M30</option>
+      <option value="1h">H1</option><option value="4h">H4</option><option value="1d">D1</option>
+    </select>
+    <button id="start">ACTIVATE AUTHORITY</button>
+    <div id="status-badge" class="badge wait">ENGINE READY</div>
+  </div>
+  <div id="chart-wrapper">
+      <div id="chart"></div>
+      <div id="scalper-hint"></div>
+  </div>
+  <div id="info-panel">
+    <div class="row"><b>SESSION</b> <span id="session-text">—</span></div>
+    <div class="row"><b>MTF CACHE</b> <span id="mtf-status">EMPTY</span></div>
+    <div class="row"><b>H1 TREND</b> <span id="h1-trend">—</span></div>
+    <div class="row"><b>D1 TREND</b> <span id="d1-trend">—</span></div>
+    <div class="row"><b>MEMORY</b> <span id="memory-text">0</span></div>
+    <div class="row"><b>COOLDOWN</b> <span id="cd-text">0</span></div>
+  </div>
+</div>
+
+<script>
+let cache = { h1: 'WAIT', d1: 'WAIT' }, ws = null, history = [], lastBar = null;
+let cooldownCounter = 0, failMemory = 0, engineFrozen = false;
+let currentGhostData = null; // Store active zone for touch detection
+
+const chart = LightweightCharts.createChart(document.getElementById('chart'), {
+    layout: { background: { color: '#020617' }, textColor: '#d1d4dc' },
+    rightPriceScale: { borderColor: '#1e293b', autoScale: true, precision: 5 },
+    timeScale: { timeVisible: true }
+});
+const candleSeries = chart.addCandlestickSeries({ upColor: '#22c55e', downColor: '#ef4444', borderVisible: false });
+const ghostZoneTop = chart.addLineSeries({ color: 'transparent', lineWidth: 1, lineStyle: 2 });
+const ghostZoneBottom = chart.addLineSeries({ color: 'transparent', lineWidth: 1, lineStyle: 2 });
+const ghostCandleSeries = chart.addCandlestickSeries({ borderVisible: false });
+
+/* ================= UPGRADE 2: DISTINCTIVE AUDIO ================= */
+function playAdvancedVoice(direction) {
+    if(!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    
+    const msg = new SpeechSynthesisUtterance();
+    msg.lang = 'id-ID';
+    
+    if(direction === 'BUY') {
+        msg.text = "Peringatan beli. Struktur tembus ke atas. Tunggu harga di zona hantu bawah. Ulangi, ambil posisi beli.";
+        msg.pitch = 1.4; // Suara wanita tinggi
+        msg.rate = 0.8;
+    } else {
+        msg.text = "Peringatan jual. Struktur tembus ke bawah. Tunggu harga di zona hantu atas. Ulangi, ambil posisi jual.";
+        msg.pitch = 0.5; // Suara pria berat/rendah
+        msg.rate = 0.75;
+    }
+    
+    window.speechSynthesis.speak(msg);
+    // Re-trigger after short delay for "agak lama" effect
+    setTimeout(() => window.speechSynthesis.speak(msg), 4000);
+}
+
+/* ================= UPGRADE 1: AUTO-HIDE HINT ================= */
+let hintTimer;
+function showScalperHint(text) {
+    const el = document.getElementById('scalper-hint');
+    el.textContent = text;
+    el.style.display = 'block';
+    el.style.opacity = '1';
+    
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => {
+        el.style.opacity = '0';
+        setTimeout(() => { el.style.display = 'none'; }, 1000);
+    }, 30000); // 30 Detik
+}
+
+/* ================= UPGRADE 3: GHOST PERSISTENCE & TOUCH ================= */
+function drawGhostVisual(cur, prev) {
+    if(!cur || !prev) return;
+    const r = cur.high - cur.low;
+    const direction = cur.close > prev.high ? 'BUY' : 'SELL';
+    
+    currentGhostData = {
+        direction: direction,
+        top: cur.close + r * 0.15,
+        bottom: cur.close - r * 0.15,
+        touched: false
+    };
+
+    const color = direction === 'BUY' ? 'rgba(34,197,94,0.6)' : 'rgba(239,68,68,0.6)';
+    const t = Math.floor(cur.time / 1000);
+
+    ghostZoneTop.applyOptions({ color });
+    ghostZoneBottom.applyOptions({ color });
+    ghostZoneTop.setData([{ time: t, value: currentGhostData.top }, { time: t + 3600, value: currentGhostData.top }]);
+    ghostZoneBottom.setData([{ time: t, value: currentGhostData.bottom }, { time: t + 3600, value: currentGhostData.bottom }]);
+
+    ghostCandleSeries.applyOptions({ upColor: color, downColor: color, wickUpColor: color, wickDownColor: color });
+    ghostCandleSeries.setData([{ time: t + 60, open: cur.close, high: currentGhostData.top, low: currentGhostData.bottom, close: cur.close }]);
+    
+    playAdvancedVoice(direction);
+    
+    let msg = direction === 'BUY' ? "🔺 BUY SCALP\nIdeal Entry: Tunggu harga turun ke Ghost Zone Bawah" : "🔻 SELL SCALP\nIdeal Entry: Tunggu harga naik ke Ghost Zone Atas";
+    showScalperHint(msg + "\n\nTiming:\n- Jangan kejar harga.\n- Eksekusi saat harga menyentuh zona hantu.");
+}
+
+function checkGhostTouch(price) {
+    if(!currentGhostData || currentGhostData.touched) return;
+    
+    const isInside = price <= currentGhostData.top && price >= currentGhostData.bottom;
+    if(isInside) {
+        currentGhostData.touched = true;
+        const el = document.getElementById('status-badge');
+        el.textContent = "ENTRY ZONE REACHED - EXECUTE!";
+        el.className = "badge reached";
+        speak("Zona masuk tercapai. Eksekusi sekarang.", 'normal');
+    }
+}
+
+function setHumanStatus(text, cls, voice=false) {
+    const el = document.getElementById('status-badge');
+    el.textContent = text;
+    el.className = 'badge ' + cls;
+}
+
+/* ================= ENGINE LOGIC ================= */
+function runEngine() {
+    if(history.length < 30) return;
+    const cur = lastBar;
+    const prev = history.at(-1);
+    
+    // Check Touch on every tick
+    checkGhostTouch(cur.close);
+
+    if(engineFrozen || cooldownCounter > 0) return;
+
+    const breakUp = cur.close > prev.high;
+    const breakDown = cur.close < prev.low;
+    
+    if(breakUp || breakDown) {
+        setHumanStatus("OKE. KONDISI LENGKAP. FOKUS.", "valid");
+        drawGhostVisual(cur, prev);
+        engineFrozen = true;
+        cooldownCounter = 5;
+    }
+}
+
+/* ================= BASE FUNCTIONS ================= */
+async function syncGlobalTrends() {
+    const s = document.getElementById('symbol').value;
+    try {
+        const [h1, d1] = await Promise.all([
+            fetch(`https://api.binance.com/api/v3/klines?symbol=${s}&interval=1h&limit=2`).then(r => r.json()),
+            fetch(`https://api.binance.com/api/v3/klines?symbol=${s}&interval=1d&limit=2`).then(r => r.json())
+        ]);
+        cache.h1 = (+h1[0][4] > +h1[0][1]) ? 'BULL' : 'BEAR';
+        cache.d1 = (+d1[0][4] > +d1[0][1]) ? 'BULL' : 'BEAR';
+        document.getElementById('h1-trend').textContent = cache.h1;
+        document.getElementById('d1-trend').textContent = cache.d1;
+    } catch (e) {}
+}
+
+async function initData() {
+    const s = document.getElementById('symbol').value;
+    const t = document.getElementById('tf').value;
+    currentGhostData = null;
+    ghostZoneTop.setData([]); ghostZoneBottom.setData([]); ghostCandleSeries.setData([]);
+    engineFrozen = false; cooldownCounter = 0;
+    await syncGlobalTrends();
+    const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=${s}&interval=${t}&limit=300`);
+    const d = await r.json();
+    history = d.map(k => ({ time: k[0], open: +k[1], high: +k[2], low: +k[3], close: +k[4] }));
+    candleSeries.setData(history.map(k => ({ time: k.time / 1000, open: k.open, high: k.high, low: k.low, close: k.close })));
+    if(ws) ws.close();
+    ws = new WebSocket(`wss://stream.binance.com:9443/ws/${s.toLowerCase()}@kline_${t}`);
+    ws.onmessage = e => {
+        const k = JSON.parse(e.data).k;
+        const bar = { time: k.t, open: +k.o, high: +k.h, low: +k.l, close: +k.c };
+        candleSeries.update({ time: bar.time / 1000, open: bar.open, high: bar.high, low: bar.low, close: bar.close });
+        if (!lastBar || lastBar.time !== bar.time) {
+            if (lastBar) history.push(lastBar);
+            lastBar = bar;
+            runEngine();
+            if(cooldownCounter > 0) cooldownCounter--;
+        } else {
+            lastBar = bar;
+            checkGhostTouch(bar.close);
+        }
+    };
+}
+
+document.getElementById('start').onclick = initData;
+function speak(t){ const m=new SpeechSynthesisUtterance(t); m.lang='id-ID'; window.speechSynthesis.speak(m); }
+</script>
+</body>
+</html>
